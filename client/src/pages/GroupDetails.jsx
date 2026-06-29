@@ -109,6 +109,10 @@ function GroupDetails() {
                 ))}
             </ul>
 
+            <button onClick={() => navigate(`/chat/${groupId}`)}>
+                Open Chat
+            </button>
+
             <button onClick={handleLeave}>
                 Leave Group
             </button>

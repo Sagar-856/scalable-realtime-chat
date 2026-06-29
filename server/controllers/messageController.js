@@ -1,5 +1,6 @@
-const Message = require("../models/Message");
-const Group = require("../models/Group");
+const Message = require("../models/message");
+const Group = require("../models/group");
+const { getIO } = require("../socket");
 
 module.exports.sendMessage = async (req, res) => {
     try {
@@ -40,6 +41,15 @@ module.exports.sendMessage = async (req, res) => {
         const populatedMessage = await Message.findById(message._id)
             .populate("sender", "name email")
             .populate("group", "name");
+
+        // --- THE LIVE PART ---
+        // The REST request above has already done the important, "must not fail" work:
+        // validating, saving to MongoDB. Now that we know it's safely persisted,
+        // we push it out live to everyone else currently viewing this group's chat.
+        // We use the groupId (a string) as the room name — every socket that called
+        // socket.emit("joinGroup", groupId) on the frontend is sitting in this room.
+        const io = getIO();
+        io.to(groupId).emit("newMessage", populatedMessage);
 
         res.status(201).json(populatedMessage);
 
