@@ -1,6 +1,8 @@
+const dotenv = require("dotenv");
+dotenv.config();
 const express = require("express");
 const http = require("http");
-const dotenv = require("dotenv");
+
 const cors = require("cors");
 const authRoute = require("./routes/authRoute");
 const groupRoute = require("./routes/groupRoute");  
@@ -9,8 +11,6 @@ const connectDB = require("./config/db");
 const { initializeSocket } = require("./socket");
 
 
-
-dotenv.config();
 
 connectDB();
 
@@ -32,11 +32,18 @@ app.get("/", (req, res) => {
 // requests exactly as before — this change is invisible to your REST routes.
 const httpServer = http.createServer(app);
 
-// Hand the server to socket.js, which sets up all the "io.on('connection', ...)" logic.
-initializeSocket(httpServer);
-
 const PORT = process.env.PORT || 5000;
 
-httpServer.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+// startServer wraps everything in an async function so we can properly
+// "await" the Redis connection inside initializeSocket before the server
+// starts accepting traffic. Without this, the server might start listening
+// before Redis is ready, causing the first few socket connections to fail.
+async function startServer() {
+  await initializeSocket(httpServer);
+
+  httpServer.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+  });
+}
+
+startServer();

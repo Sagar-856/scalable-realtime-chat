@@ -5,7 +5,7 @@ const { getIO } = require("../socket");
 module.exports.sendMessage = async (req, res) => {
     try {
         const { groupId } = req.params;
-        const { content } = req.body;
+        const { content, senderSocketId, isAIQuestion } = req.body;
         const userId = req.user.userId;
 
         if (!content) {
@@ -36,6 +36,7 @@ module.exports.sendMessage = async (req, res) => {
             content,
             sender: userId,
             group: groupId,
+            isAIQuestion: !!isAIQuestion,
         });
 
         const populatedMessage = await Message.findById(message._id)
@@ -48,8 +49,23 @@ module.exports.sendMessage = async (req, res) => {
         // we push it out live to everyone else currently viewing this group's chat.
         // We use the groupId (a string) as the room name — every socket that called
         // socket.emit("joinGroup", groupId) on the frontend is sitting in this room.
+        //
+        // .except(senderSocketId) excludes the sender's OWN socket from this broadcast.
+        // Why this is needed: the sender's socket is also a member of this room
+        // (they called joinGroup too), so without .except(), they'd receive their
+        // own message back from the server — IN ADDITION to the copy we already
+        // added to their screen manually in Chat.jsx right after the POST succeeded.
+        // That double-delivery was the duplicate-message bug.
         const io = getIO();
-        io.to(groupId).emit("newMessage", populatedMessage);
+        if (senderSocketId) {
+            io.to(groupId).except(senderSocketId).emit("newMessage", populatedMessage);
+        } else {
+            // Fallback: if we don't know the sender's socket id for some reason
+            // (e.g. request made outside the normal UI flow), broadcast to everyone.
+            // The sender might briefly see a duplicate in this rare case, but it's
+            // safer than silently dropping the message for everyone else.
+            io.to(groupId).emit("newMessage", populatedMessage);
+        }
 
         res.status(201).json(populatedMessage);
 
@@ -89,6 +105,7 @@ module.exports.getMessages = async (req, res) => {
             group: groupId,
         })
             .populate("sender", "name email")
+            .populate("replyTo", "content")
             .sort({ createdAt: 1 });
 
         res.status(200).json(messages);
